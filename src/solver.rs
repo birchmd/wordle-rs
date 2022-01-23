@@ -1,5 +1,5 @@
 use crate::server::{self, Server};
-use crate::{util, GuessOutcome, LetterOutcome, Word, Letter};
+use crate::{util, GuessOutcome, Letter, LetterOutcome, Word};
 use rand::seq::IteratorRandom;
 use std::collections::HashSet;
 
@@ -120,13 +120,11 @@ fn satisfies(word: &Word, state: &[LetterState; 26]) -> bool {
                     PositionState::No => return false,
                 }
             }
-            LetterState::AntiPositions(ps) => {
-                match ps[i] {
-                    PositionState::Yes => return false,
-                    PositionState::Maybe => (),
-                    PositionState::No => (),
-                }
-            }
+            LetterState::AntiPositions(ps) => match ps[i] {
+                PositionState::Yes => return false,
+                PositionState::Maybe => (),
+                PositionState::No => (),
+            },
         }
     }
     // Check everything that is present is in the candidate word

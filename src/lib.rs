@@ -128,7 +128,7 @@ pub(crate) mod util {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Letter, Word, util};
+    use crate::{util, Letter, Word};
 
     #[test]
     fn test_letters() {
@@ -159,7 +159,10 @@ mod tests {
     fn test_word_from_str() {
         assert_eq!(
             Word::try_from_str("River"),
-            Some(Word(util::map_array([b'r', b'i', b'v', b'e', b'r'], Letter))),
+            Some(Word(util::map_array(
+                [b'r', b'i', b'v', b'e', b'r'],
+                Letter
+            ))),
         );
 
         // Longer than 5 bytes
