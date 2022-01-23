@@ -1,5 +1,5 @@
 use crate::server::{self, Server};
-use crate::{GuessOutcome, LetterOutcome, Word};
+use crate::{util, GuessOutcome, LetterOutcome, Word, Letter};
 use rand::seq::IteratorRandom;
 use std::collections::HashSet;
 
@@ -40,25 +40,62 @@ impl Solver {
             match y {
                 LetterOutcome::Absent => self.letters_state[j as usize] = LetterState::Absent,
                 LetterOutcome::Present => match self.letters_state[j as usize] {
-                    LetterState::Unknown | LetterState::Absent => {
+                    LetterState::Unknown => {
                         let mut ps = [PositionState::Maybe; 5];
                         ps[i] = PositionState::No;
                         self.letters_state[j as usize] = LetterState::Positions(ps);
                     }
-                    LetterState::Positions(mut ps) => {
+                    LetterState::Positions(ref mut ps) => {
                         ps[i] = PositionState::No;
                     }
-                },
-                LetterOutcome::Correct => match self.letters_state[j as usize] {
-                    LetterState::Unknown | LetterState::Absent => {
-                        let mut ps = [PositionState::Maybe; 5];
-                        ps[i] = PositionState::Yes;
-                        self.letters_state[j as usize] = LetterState::Positions(ps);
+                    LetterState::AntiPositions(ps) => {
+                        let mut new_ps = util::map_array(ps, PositionState::not);
+                        new_ps[i] = PositionState::No;
+                        self.letters_state[j as usize] = LetterState::Positions(new_ps);
                     }
-                    LetterState::Positions(mut ps) => {
-                        ps[i] = PositionState::Yes;
-                    }
+                    // If server is working properly, cannot go from Absent to Present
+                    LetterState::Absent => unreachable!(),
                 },
+                LetterOutcome::Correct => {
+                    // current letter is at position i
+                    match self.letters_state[j as usize] {
+                        LetterState::Unknown => {
+                            let mut ps = [PositionState::Maybe; 5];
+                            ps[i] = PositionState::Yes;
+                            self.letters_state[j as usize] = LetterState::Positions(ps);
+                        }
+                        LetterState::Positions(ref mut ps) => {
+                            ps[i] = PositionState::Yes;
+                        }
+                        LetterState::AntiPositions(ps) => {
+                            let mut new_ps = util::map_array(ps, PositionState::not);
+                            new_ps[i] = PositionState::Yes;
+                            self.letters_state[j as usize] = LetterState::Positions(new_ps);
+                        }
+                        // If server is working properly, cannot go from Absent to Correct
+                        LetterState::Absent => unreachable!(),
+                    }
+                    // all other letters are not at position i
+                    for (k, s) in self.letters_state.iter_mut().enumerate() {
+                        if k == j.into() {
+                            continue;
+                        }
+                        match s {
+                            LetterState::Absent => (), // nothing to change
+                            LetterState::Unknown => {
+                                let mut ps = [PositionState::Maybe; 5];
+                                ps[i] = PositionState::Yes;
+                                *s = LetterState::AntiPositions(ps);
+                            }
+                            LetterState::AntiPositions(ps) => {
+                                ps[i] = PositionState::Yes;
+                            }
+                            LetterState::Positions(ps) => {
+                                ps[i] = PositionState::No;
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -83,6 +120,21 @@ fn satisfies(word: &Word, state: &[LetterState; 26]) -> bool {
                     PositionState::No => return false,
                 }
             }
+            LetterState::AntiPositions(ps) => {
+                match ps[i] {
+                    PositionState::Yes => return false,
+                    PositionState::Maybe => (),
+                    PositionState::No => (),
+                }
+            }
+        }
+    }
+    // Check everything that is present is in the candidate word
+    for (l, s) in Letter::LETTERS.iter().zip(state.iter()) {
+        if let LetterState::Positions(_) = s {
+            if !word.contains(l) {
+                return false;
+            }
         }
     }
     true
@@ -90,8 +142,13 @@ fn satisfies(word: &Word, state: &[LetterState; 26]) -> bool {
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum LetterState {
+    /// No information yet
     Unknown,
+    /// Definitely know the letter is in at least some positions
     Positions([PositionState; 5]),
+    /// Definitely know the letter is not in some positions
+    AntiPositions([PositionState; 5]),
+    /// Definitely know the letter is not in the word at all
     Absent,
 }
 
@@ -102,6 +159,23 @@ pub enum PositionState {
     No,
 }
 
+impl PositionState {
+    pub fn not(self) -> Self {
+        match self {
+            Self::Yes => Self::No,
+            Self::No => Self::Yes,
+            Self::Maybe => Self::Maybe,
+        }
+    }
+}
+
+impl Default for PositionState {
+    fn default() -> Self {
+        Self::Maybe
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub enum Error {
     Stumped,
     Server(server::Error),
@@ -115,5 +189,30 @@ impl From<server::Error> for Error {
 
 #[cfg(test)]
 mod tests {
-    // TODO
+    use crate::{server, solver, LetterOutcome, Word};
+    use rand::seq::IteratorRandom;
+    use std::collections::HashSet;
+
+    #[test]
+    fn test_solver() {
+        let dict = load_dictionary();
+        let word = *dict.iter().choose(&mut rand::thread_rng()).unwrap();
+
+        let mut server = server::Server::new(word, dict.clone());
+        let mut solver = solver::Solver::new(dict);
+
+        println!("Answer: {:?}", word);
+        loop {
+            let (guess, outcome) = solver.guess(&mut server).unwrap();
+            println!("{:?} {:?}", guess, outcome);
+            if outcome == [LetterOutcome::Correct; 5] {
+                break;
+            }
+        }
+    }
+
+    fn load_dictionary() -> HashSet<Word> {
+        let text = std::fs::read_to_string("./res/words.txt").unwrap();
+        text.split('\n').filter_map(Word::try_from_str).collect()
+    }
 }

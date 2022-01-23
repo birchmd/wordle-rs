@@ -95,6 +95,10 @@ impl Word {
     pub fn iter(&self) -> std::slice::Iter<Letter> {
         self.0.iter()
     }
+
+    pub fn contains(&self, letter: &Letter) -> bool {
+        self.iter().any(|l| l == letter)
+    }
 }
 
 impl IntoIterator for Word {
@@ -107,9 +111,24 @@ impl IntoIterator for Word {
     }
 }
 
+pub(crate) mod util {
+    pub(crate) fn map_array<T, U, F, const N: usize>(xs: [T; N], f: F) -> [U; N]
+    where
+        T: Sized,
+        U: Sized + Default + Copy,
+        F: Fn(T) -> U,
+    {
+        let mut result = [Default::default(); N];
+        for (i, t) in xs.into_iter().enumerate() {
+            result[i] = f(t)
+        }
+        result
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::{Letter, Word};
+    use crate::{Letter, Word, util};
 
     #[test]
     fn test_letters() {
@@ -140,7 +159,7 @@ mod tests {
     fn test_word_from_str() {
         assert_eq!(
             Word::try_from_str("River"),
-            Some(Word(map_array([b'r', b'i', b'v', b'e', b'r'], Letter))),
+            Some(Word(util::map_array([b'r', b'i', b'v', b'e', b'r'], Letter))),
         );
 
         // Longer than 5 bytes
@@ -151,18 +170,5 @@ mod tests {
 
         // Numbers don't parse into letters
         assert_eq!(Word::try_from_str("ABCD1"), None,);
-    }
-
-    fn map_array<T, U, F, const N: usize>(xs: [T; N], f: F) -> [U; N]
-    where
-        T: Sized,
-        U: Sized + Default + Copy,
-        F: Fn(T) -> U,
-    {
-        let mut result = [Default::default(); N];
-        for (i, t) in xs.into_iter().enumerate() {
-            result[i] = f(t)
-        }
-        result
     }
 }
