@@ -205,6 +205,42 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_average_guesses() {
+        let dict = load_dictionary();
+        let mut total: u16 = 0;
+        let mut count: u16 = 0;
+        for word in dict.iter() {
+            count += 1;
+            total += run_solver(*word, dict.clone()) as u16;
+        }
+        let ratio = f64::from(total) / f64::from(count);
+        println!("{}", ratio);
+    }
+
+    fn run_solver(word: Word, dict: HashSet<Word>) -> u8 {
+        let mut server = server::Server::new(word, dict.clone());
+        let mut solver = solver::Solver::new(dict);
+
+        let mut guess_counter = 0u8;
+        loop {
+            match solver.guess(&mut server) {
+                Ok((_, outcome)) => {
+                    guess_counter += 1;
+                    if outcome == [LetterOutcome::Correct; 5] {
+                        break;
+                    }
+                }
+                Err(_) => {
+                    println!("{:?}", word);
+                    guess_counter = 7;
+                    break;
+                }
+            }
+        }
+        guess_counter
+    }
+
     fn load_dictionary() -> HashSet<Word> {
         let text = std::fs::read_to_string("./res/words.txt").unwrap();
         text.split('\n').filter_map(Word::try_from_str).collect()
