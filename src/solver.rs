@@ -225,6 +225,21 @@ mod tests {
         println!("Failure rate: {}", ratio);
     }
 
+    #[test]
+    #[ignore]
+    fn test_interactive_server() {
+        let dict = load_dictionary();
+        let mut server = server::InteractiveServer;
+        let mut solver = solver::Solver::new(dict);
+
+        loop {
+            let (_, outcome) = solver.guess(&mut server).unwrap();
+            if outcome == [LetterOutcome::Correct; 5] {
+                break;
+            }
+        }
+    }
+
     fn run_solver(word: Word, dict: HashSet<Word>) -> u8 {
         let mut server = server::InMemoryServer::new(word, dict.clone());
         let mut solver = solver::Solver::new(dict);

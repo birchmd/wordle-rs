@@ -67,6 +67,61 @@ impl Server for InMemoryServer {
     }
 }
 
+pub struct InteractiveServer;
+
+impl Server for InteractiveServer {
+    fn can_guess(&self) -> bool {
+        true
+    }
+
+    fn submit(&mut self, guess: Word) -> Result<GuessOutcome, Error> {
+        println!("Guess: {:?}", guess);
+
+        let mut input = String::with_capacity(5);
+        let mut outcome = [LetterOutcome::Absent; 5];
+        loop {
+            input.clear();
+            if let Err(_) = std::io::stdin().read_line(&mut input) {
+                println!("Some error occurred, try again.");
+            }
+            let trimmed = input.trim();
+
+            let mut parse_err = false;
+            for (i, b) in trimmed.bytes().enumerate() {
+                if i == 5 {
+                    break;
+                }
+                match b {
+                    b'*' => outcome[i] = LetterOutcome::Correct,
+                    b'+' => outcome[i] = LetterOutcome::Present,
+                    b'-' => outcome[i] = LetterOutcome::Absent,
+                    b'!' => return Err(Error::GameOver),
+                    _ => {
+                        println!(
+                            "Unrecognized character, use only *=correct +=present -=absent !=game_over"
+                        );
+                        parse_err = true;
+                        break;
+                    }
+                }
+            }
+
+            if trimmed.len() < 5 {
+                println!("Input too short, try again.");
+                parse_err = true;
+            } else if trimmed.len() > 5 {
+                println!("Input too long, try again.");
+                parse_err = true;
+            }
+
+            if !parse_err {
+                break;
+            }
+        }
+        Ok(outcome)
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum Error {
     GameOver,
