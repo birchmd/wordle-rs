@@ -1,17 +1,19 @@
 use crate::server::{self, Server};
 use crate::{util, GuessOutcome, Letter, LetterOutcome, Word};
-use rand::seq::IteratorRandom;
 use std::collections::HashSet;
 
 pub struct Solver {
     guess_index: usize,
     guess_outcomes: [Option<GuessOutcome>; 6],
     letters_state: [LetterState; 26],
-    dictionary: HashSet<Word>,
+    dictionary: Vec<Word>,
 }
 
 impl Solver {
-    pub fn new(dictionary: HashSet<Word>) -> Self {
+    pub fn new(dict: HashSet<Word>) -> Self {
+        // sort words by number of distinct vowels for better picking
+        let mut dictionary: Vec<Word> = dict.into_iter().collect();
+        dictionary.sort_unstable_by_key(|w| w.distinct_vowels());
         Self {
             guess_index: 0,
             guess_outcomes: [None; 6],
@@ -22,13 +24,7 @@ impl Solver {
 
     pub fn guess(&mut self, server: &mut Server) -> Result<(Word, GuessOutcome), Error> {
         // Select a random word still in the dictionary
-        let mut rng = rand::thread_rng();
-        let guess = *self
-            .dictionary
-            .iter()
-            .choose(&mut rng)
-            .ok_or(Error::Stumped)?;
-        self.dictionary.remove(&guess);
+        let guess = self.dictionary.pop().ok_or(Error::Stumped)?;
 
         let outcome = server.submit(guess)?;
         self.guess_outcomes[self.guess_index] = Some(outcome);

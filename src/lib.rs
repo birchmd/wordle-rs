@@ -51,6 +51,14 @@ impl Letter {
         Letter(b'z'),
     ];
 
+    pub const VOWELS: [Self; 5] = [
+        Letter(b'a'),
+        Letter(b'e'),
+        Letter(b'i'),
+        Letter(b'o'),
+        Letter(b'u'),
+    ];
+
     pub const fn new(c: u8) -> Option<Self> {
         if !c.is_ascii_alphabetic() {
             return None;
@@ -98,6 +106,16 @@ impl Word {
 
     pub fn contains(&self, letter: &Letter) -> bool {
         self.iter().any(|l| l == letter)
+    }
+
+    pub fn distinct_vowels(&self) -> u8 {
+        let mut contains = [0u8; 5];
+        for l in self.iter() {
+            if let Some(i) = Letter::VOWELS.iter().position(|v| v == l) {
+                contains[i] |= 1;
+            }
+        }
+        contains.into_iter().sum()
     }
 }
 
