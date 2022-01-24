@@ -1,7 +1,12 @@
 use crate::{GuessOutcome, Letter, LetterOutcome, Word};
 use std::collections::HashSet;
 
-pub struct Server {
+pub trait Server {
+    fn can_guess(&self) -> bool;
+    fn submit(&mut self, guess: Word) -> Result<GuessOutcome, Error>;
+}
+
+pub struct InMemoryServer {
     answer: Word,
     in_answer: [bool; 26],
     guess_index: usize,
@@ -9,7 +14,7 @@ pub struct Server {
     dictionary: HashSet<Word>,
 }
 
-impl Server {
+impl InMemoryServer {
     pub fn new(answer: Word, dictionary: HashSet<Word>) -> Self {
         let mut in_answer = [false; 26];
         for c in answer.iter() {
@@ -24,15 +29,17 @@ impl Server {
         }
     }
 
-    pub fn can_guess(&self) -> bool {
-        self.guess_index < 6
-    }
-
     fn answer_contains_letter(&self, l: &Letter) -> bool {
         self.in_answer[l.index() as usize]
     }
+}
 
-    pub fn submit(&mut self, guess: Word) -> Result<GuessOutcome, Error> {
+impl Server for InMemoryServer {
+    fn can_guess(&self) -> bool {
+        self.guess_index < 6
+    }
+
+    fn submit(&mut self, guess: Word) -> Result<GuessOutcome, Error> {
         if !self.can_guess() {
             return Err(Error::GameOver);
         }
@@ -70,7 +77,7 @@ pub enum Error {
 #[cfg(test)]
 mod tests {
     use crate::{
-        server::{self, Server},
+        server::{self, InMemoryServer, Server},
         LetterOutcome, Word,
     };
 
@@ -81,7 +88,7 @@ mod tests {
             .into_iter()
             .map(|s| Word::try_from_str(s).unwrap())
             .collect();
-        let mut server = Server::new(word, dictionary);
+        let mut server = InMemoryServer::new(word, dictionary);
 
         let guess = Word::try_from_str("river").unwrap();
         let result = server.submit(guess).unwrap();

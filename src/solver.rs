@@ -22,7 +22,7 @@ impl Solver {
         }
     }
 
-    pub fn guess(&mut self, server: &mut Server) -> Result<(Word, GuessOutcome), Error> {
+    pub fn guess<S: Server>(&mut self, server: &mut S) -> Result<(Word, GuessOutcome), Error> {
         // Select a random word still in the dictionary
         let guess = self.dictionary.pop().ok_or(Error::Stumped)?;
 
@@ -192,7 +192,7 @@ mod tests {
         let dict = load_dictionary();
         let word = *dict.iter().choose(&mut rand::thread_rng()).unwrap();
 
-        let mut server = server::Server::new(word, dict.clone());
+        let mut server = server::InMemoryServer::new(word, dict.clone());
         let mut solver = solver::Solver::new(dict);
 
         println!("Answer: {:?}", word);
@@ -226,7 +226,7 @@ mod tests {
     }
 
     fn run_solver(word: Word, dict: HashSet<Word>) -> u8 {
-        let mut server = server::Server::new(word, dict.clone());
+        let mut server = server::InMemoryServer::new(word, dict.clone());
         let mut solver = solver::Solver::new(dict);
 
         let mut guess_counter = 0u8;
