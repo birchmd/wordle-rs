@@ -210,12 +210,19 @@ mod tests {
         let dict = load_dictionary();
         let mut total: u16 = 0;
         let mut count: u16 = 0;
+        let mut fail_count: u16 = 0;
         for word in dict.iter() {
             count += 1;
-            total += run_solver(*word, dict.clone()) as u16;
+            let result = run_solver(*word, dict.clone()) as u16;
+            total += result;
+            if result > 6 {
+                fail_count += 1;
+            }
         }
         let ratio = f64::from(total) / f64::from(count);
-        println!("{}", ratio);
+        println!("Average guesses to solve: {}", ratio);
+        let ratio = f64::from(fail_count) / f64::from(count);
+        println!("Failure rate: {}", ratio);
     }
 
     fn run_solver(word: Word, dict: HashSet<Word>) -> u8 {
@@ -232,7 +239,7 @@ mod tests {
                     }
                 }
                 Err(_) => {
-                    println!("{:?}", word);
+                    // println!("{:?}", word);
                     guess_counter = 7;
                     break;
                 }
