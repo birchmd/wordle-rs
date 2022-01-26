@@ -230,4 +230,11 @@ mod tests {
         let result = server.submit(guess);
         assert_eq!(result, Err(server::Error::GameOver),);
     }
+
+    // TODO: add the following test case:
+    // 'audio' -> +----
+    // 'snake' -> --*+-
+    // 'track' -> --***
+    // 'clack' -> --*** NOTE THE DUPLICATED C TREATED DIFFERENTLY
+    // 'whack' -> *****
 }

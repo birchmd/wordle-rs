@@ -68,7 +68,12 @@ impl Solver {
                             new_ps[i] = PositionState::Yes;
                             self.letters_state[j as usize] = LetterState::Positions(new_ps);
                         }
-                        // If server is working properly, cannot go from Absent to Correct
+                        // TODO: this case actually _is_ possible. If the word only contains the letter once,
+                        // and you already have it in the right place then other instances of that letter in
+                        // the guess will appear as "absent" (on the official website).
+                        // For example, the answer was 'whack' and the solver had guessed 'track', followed by
+                        // 'clack'. The first 'c' in the 'clack' guess was returned as "absent" because the second
+                        // 'c' was already in the correct position.
                         LetterState::Absent => unreachable!(),
                     }
                     // all other letters are not at position i
