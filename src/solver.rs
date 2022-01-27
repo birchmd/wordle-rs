@@ -2,6 +2,7 @@ use crate::server::{self, Server};
 use crate::{util, GuessOutcome, Letter, LetterOutcome, Word};
 use std::collections::HashSet;
 
+#[derive(Debug)]
 pub struct Solver {
     guess_index: usize,
     guess_outcomes: [Option<GuessOutcome>; 6],
@@ -32,14 +33,29 @@ impl Solver {
 
         // Update knowledge about the letters
         for (i, (x, y)) in guess.iter().zip(outcome.iter()).enumerate() {
-            let j = x.index();
+            let j = x.index() as usize;
             match y {
-                LetterOutcome::Absent => self.letters_state[j as usize] = LetterState::Absent,
-                LetterOutcome::Present => match self.letters_state[j as usize] {
+                LetterOutcome::Absent => match self.letters_state[j] {
+                    LetterState::Unknown => self.letters_state[j] = LetterState::Absent,
+                    LetterState::Positions(ref mut ps) => {
+                        ps[i] = PositionState::No;
+                        // We know Present -> Absent additionally means there is no further
+                        // duplicates of that letter, so we'll immediately filter out words
+                        // with too many instances of it.
+                        let letter_count = guess.count(x);
+                        self.dictionary.retain(|w| w.count(x) < letter_count);
+                    }
+                    // We knew were it was NOT located because of a correct letter, now
+                    // we have evidence it might be nowhere at all, which is stronger, so
+                    // we'll go with that.
+                    LetterState::AntiPositions(_) => self.letters_state[j] = LetterState::Absent,
+                    LetterState::Absent => (),
+                },
+                LetterOutcome::Present => match self.letters_state[j] {
                     LetterState::Unknown => {
                         let mut ps = [PositionState::Maybe; 5];
                         ps[i] = PositionState::No;
-                        self.letters_state[j as usize] = LetterState::Positions(ps);
+                        self.letters_state[j] = LetterState::Positions(ps);
                     }
                     LetterState::Positions(ref mut ps) => {
                         ps[i] = PositionState::No;
@@ -47,18 +63,18 @@ impl Solver {
                     LetterState::AntiPositions(ps) => {
                         let mut new_ps = util::map_array(ps, PositionState::not);
                         new_ps[i] = PositionState::No;
-                        self.letters_state[j as usize] = LetterState::Positions(new_ps);
+                        self.letters_state[j] = LetterState::Positions(new_ps);
                     }
                     // If server is working properly, cannot go from Absent to Present
                     LetterState::Absent => unreachable!(),
                 },
                 LetterOutcome::Correct => {
                     // current letter is at position i
-                    match self.letters_state[j as usize] {
+                    match self.letters_state[j] {
                         LetterState::Unknown => {
                             let mut ps = [PositionState::Maybe; 5];
                             ps[i] = PositionState::Yes;
-                            self.letters_state[j as usize] = LetterState::Positions(ps);
+                            self.letters_state[j] = LetterState::Positions(ps);
                         }
                         LetterState::Positions(ref mut ps) => {
                             ps[i] = PositionState::Yes;
@@ -66,19 +82,22 @@ impl Solver {
                         LetterState::AntiPositions(ps) => {
                             let mut new_ps = util::map_array(ps, PositionState::not);
                             new_ps[i] = PositionState::Yes;
-                            self.letters_state[j as usize] = LetterState::Positions(new_ps);
+                            self.letters_state[j] = LetterState::Positions(new_ps);
                         }
-                        // TODO: this case actually _is_ possible. If the word only contains the letter once,
-                        // and you already have it in the right place then other instances of that letter in
-                        // the guess will appear as "absent" (on the official website).
-                        // For example, the answer was 'whack' and the solver had guessed 'track', followed by
-                        // 'clack'. The first 'c' in the 'clack' guess was returned as "absent" because the second
-                        // 'c' was already in the correct position.
-                        LetterState::Absent => unreachable!(),
+                        // Absent -> Correct is possible if we guessed a word that has the letter
+                        // multiple times, but the answer only has that letter once. In our guess
+                        // one instance of the letter will be in an incorrect position, and the other in
+                        // the correct position. Since there are no duplicates of that letter the former
+                        // will be seen as Absent, while the latter as Correct.
+                        LetterState::Absent => {
+                            let mut ps = [PositionState::No; 5];
+                            ps[i] = PositionState::Yes;
+                            self.letters_state[j] = LetterState::Positions(ps);
+                        }
                     }
                     // all other letters are not at position i
                     for (k, s) in self.letters_state.iter_mut().enumerate() {
-                        if k == j.into() {
+                        if k == j {
                             continue;
                         }
                         match s {
@@ -103,6 +122,9 @@ impl Solver {
         // Filter dictionary based on information
         let state = &self.letters_state;
         self.dictionary.retain(|w| satisfies(w, state));
+        if self.dictionary.is_empty() && outcome != [LetterOutcome::Correct; 5] {
+            return Err(Error::Stumped);
+        }
 
         Ok((guess, outcome))
     }
@@ -258,6 +280,7 @@ mod tests {
                         break;
                     }
                 }
+                Err(super::Error::Stumped) => panic!("{:?}\n{:?}", server, solver),
                 Err(_) => {
                     // println!("{:?}", word);
                     guess_counter = 7;

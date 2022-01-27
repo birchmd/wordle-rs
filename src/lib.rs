@@ -108,6 +108,12 @@ impl Word {
         self.iter().any(|l| l == letter)
     }
 
+    pub fn count(&self, letter: &Letter) -> u8 {
+        self.iter()
+            .map(|l| if l == letter { 1u8 } else { 0u8 })
+            .sum()
+    }
+
     pub fn distinct_vowels(&self) -> u8 {
         let mut contains = [0u8; 5];
         for l in self.iter() {

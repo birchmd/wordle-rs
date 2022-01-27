@@ -1,5 +1,6 @@
-use crate::{GuessOutcome, Letter, LetterOutcome, Word};
+use crate::{GuessOutcome, LetterOutcome, Word};
 use std::collections::HashSet;
+use std::fmt;
 
 pub trait Server {
     fn can_guess(&self) -> bool;
@@ -8,29 +9,37 @@ pub trait Server {
 
 pub struct InMemoryServer {
     answer: Word,
-    in_answer: [bool; 26],
+    count_in_answer: [u8; 26],
     guess_index: usize,
     guesses: [Option<Word>; 6],
     dictionary: HashSet<Word>,
 }
 
+impl fmt::Debug for InMemoryServer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Dictionary intentionally left off because it is never modified
+        f.debug_struct("InMemoryServer")
+            .field("answer", &self.answer)
+            .field("count_in_answer", &self.count_in_answer)
+            .field("guess_index", &self.guess_index)
+            .field("guesses", &self.guesses)
+            .finish()
+    }
+}
+
 impl InMemoryServer {
     pub fn new(answer: Word, dictionary: HashSet<Word>) -> Self {
-        let mut in_answer = [false; 26];
+        let mut count_in_answer = [0; 26];
         for c in answer.iter() {
-            in_answer[c.index() as usize] = true;
+            count_in_answer[c.index() as usize] += 1;
         }
         Self {
             answer,
-            in_answer,
+            count_in_answer,
             guess_index: 0,
             guesses: [None; 6],
             dictionary,
         }
-    }
-
-    fn answer_contains_letter(&self, l: &Letter) -> bool {
-        self.in_answer[l.index() as usize]
     }
 }
 
@@ -53,13 +62,26 @@ impl Server for InMemoryServer {
         self.guess_index += 1;
 
         let mut result = GuessOutcome::default();
-        for (i, (x, y)) in guess.into_iter().zip(self.answer.into_iter()).enumerate() {
+        let mut correct_count_in_guess = [0u8; 26];
+        // In the first pass, find all the correct letters
+        for (i, (x, y)) in guess.iter().zip(self.answer.iter()).enumerate() {
             if x == y {
                 result[i] = LetterOutcome::Correct;
-            } else if self.answer_contains_letter(&x) {
-                result[i] = LetterOutcome::Present;
-            } else {
+                correct_count_in_guess[x.index() as usize] += 1;
+            }
+        }
+        // In the second pass, set present or absent only based
+        // on the non-correct positions
+        for (i, x) in guess.into_iter().enumerate() {
+            if result[i] == LetterOutcome::Correct {
+                continue;
+            }
+            let j = x.index() as usize;
+            if self.count_in_answer[j] - correct_count_in_guess[j] == 0 {
                 result[i] = LetterOutcome::Absent;
+            } else {
+                result[i] = LetterOutcome::Present;
+                correct_count_in_guess[j] += 1;
             }
         }
 
@@ -133,7 +155,7 @@ pub enum Error {
 mod tests {
     use crate::{
         server::{self, InMemoryServer, Server},
-        LetterOutcome, Word,
+        GuessOutcome, LetterOutcome, Word,
     };
 
     #[test]
@@ -154,7 +176,7 @@ mod tests {
                 LetterOutcome::Absent,
                 LetterOutcome::Absent,
                 LetterOutcome::Correct,
-                LetterOutcome::Present,
+                LetterOutcome::Absent,
             ]
         );
 
@@ -231,10 +253,90 @@ mod tests {
         assert_eq!(result, Err(server::Error::GameOver),);
     }
 
-    // TODO: add the following test case:
-    // 'audio' -> +----
-    // 'snake' -> --*+-
-    // 'track' -> --***
-    // 'clack' -> --*** NOTE THE DUPLICATED C TREATED DIFFERENTLY
-    // 'whack' -> *****
+    #[test]
+    fn test_duplicate_letters_in_guess() {
+        fn to_str(xs: &[u8]) -> &str {
+            std::str::from_utf8(xs).unwrap()
+        }
+        let word = Word::try_from_str("whack").unwrap();
+        let dictionary = vec!["whack", "audio", "snake", "track", "clack"]
+            .into_iter()
+            .map(|s| Word::try_from_str(s).unwrap())
+            .collect();
+        let mut server = InMemoryServer::new(word, dictionary);
+
+        let guess = Word::try_from_str("audio").unwrap();
+        let outcome = server.submit(guess).unwrap();
+        assert_eq!(to_str(&guess_outcome_to_ascii(outcome)), "+----",);
+
+        let guess = Word::try_from_str("snake").unwrap();
+        let outcome = server.submit(guess).unwrap();
+        assert_eq!(to_str(&guess_outcome_to_ascii(outcome)), "--*+-",);
+
+        let guess = Word::try_from_str("track").unwrap();
+        let outcome = server.submit(guess).unwrap();
+        assert_eq!(to_str(&guess_outcome_to_ascii(outcome)), "--***",);
+
+        // Note the first 'c' is considered absent because the second
+        // 'c' is already in the correct position and there is only one
+        // 'c' in the word.
+        let guess = Word::try_from_str("clack").unwrap();
+        let outcome = server.submit(guess).unwrap();
+        assert_eq!(to_str(&guess_outcome_to_ascii(outcome)), "--***",);
+
+        let guess = Word::try_from_str("whack").unwrap();
+        let outcome = server.submit(guess).unwrap();
+        assert_eq!(to_str(&guess_outcome_to_ascii(outcome)), "*****",);
+
+        let word = Word::try_from_str("whack").unwrap();
+        let dictionary = vec!["whack", "cacao"]
+            .into_iter()
+            .map(|s| Word::try_from_str(s).unwrap())
+            .collect();
+        let mut server = InMemoryServer::new(word, dictionary);
+
+        // The first 'c' is considered present because there is 1 'c' in the answer,
+        // but the second 'c' is considered absent because there are not two.
+        // Similarly for the 'a's.
+        let guess = Word::try_from_str("cacao").unwrap();
+        let outcome = server.submit(guess).unwrap();
+        assert_eq!(to_str(&guess_outcome_to_ascii(outcome)), "++---",);
+    }
+
+    #[test]
+    fn test_duplicate_letters_in_answer() {
+        fn to_str(xs: &[u8]) -> &str {
+            std::str::from_utf8(xs).unwrap()
+        }
+        let word = Word::try_from_str("dwell").unwrap();
+        let dictionary = vec!["dwell", "audio", "dense", "dryer"]
+            .into_iter()
+            .map(|s| Word::try_from_str(s).unwrap())
+            .collect();
+        let mut server = InMemoryServer::new(word, dictionary);
+
+        let guess = Word::try_from_str("audio").unwrap();
+        let outcome = server.submit(guess).unwrap();
+        assert_eq!(to_str(&guess_outcome_to_ascii(outcome)), "--+--",);
+
+        let guess = Word::try_from_str("dense").unwrap();
+        let outcome = server.submit(guess).unwrap();
+        assert_eq!(to_str(&guess_outcome_to_ascii(outcome)), "*+---",);
+
+        let guess = Word::try_from_str("dryer").unwrap();
+        let outcome = server.submit(guess).unwrap();
+        assert_eq!(to_str(&guess_outcome_to_ascii(outcome)), "*--+-",);
+
+        let guess = Word::try_from_str("dwell").unwrap();
+        let outcome = server.submit(guess).unwrap();
+        assert_eq!(to_str(&guess_outcome_to_ascii(outcome)), "*****",);
+    }
+
+    fn guess_outcome_to_ascii(g: GuessOutcome) -> [u8; 5] {
+        crate::util::map_array(g, |l| match l {
+            LetterOutcome::Absent => b'-',
+            LetterOutcome::Present => b'+',
+            LetterOutcome::Correct => b'*',
+        })
+    }
 }
